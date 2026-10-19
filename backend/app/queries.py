@@ -1,8 +1,8 @@
 """Read side: filtered, searched, sorted, keyset-paginated work-item listing and cursor helpers."""
+
 import base64
 import json
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, exists, func, literal, or_, select
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from .serializers import items_out
 from .workflow import PRIORITIES, STATUSES, TERMINAL
 
 MAX_LIMIT = 100
-FAR_FUTURE = datetime(9999, 12, 31, tzinfo=timezone.utc)
+FAR_FUTURE = datetime(9999, 12, 31, tzinfo=UTC)
 
 # sort key -> (SQL expression used for ORDER BY and keyset comparison, python value extractor)
 _SORTS = {
@@ -42,8 +42,8 @@ def decode_cursor(cursor: str) -> dict:
         if not isinstance(data, dict):
             raise ValueError
         return data
-    except Exception:  # noqa: BLE001 - any malformed cursor is a client error
-        raise ApiError(400, "bad_cursor", "Malformed pagination cursor.")
+    except Exception as exc:  # noqa: BLE001 - any malformed cursor is a client error
+        raise ApiError(400, "bad_cursor", "Malformed pagination cursor.") from exc
 
 
 def _escape_like(term: str) -> str:
@@ -54,17 +54,17 @@ def list_items(
     db: Session,
     p: Principal,
     *,
-    statuses: Optional[list[str]] = None,
-    priorities: Optional[list[str]] = None,
-    team_id: Optional[int] = None,
-    assignee: Optional[str] = None,  # "me" | "none" | "<user id>"
+    statuses: list[str] | None = None,
+    priorities: list[str] | None = None,
+    team_id: int | None = None,
+    assignee: str | None = None,  # "me" | "none" | "<user id>"
     needs_attention: bool = False,
-    q: Optional[str] = None,
+    q: str | None = None,
     sort: str = "updated_at",
     order: str = "desc",
     limit: int = 25,
-    cursor: Optional[str] = None,
-) -> tuple[list[ItemOut], Optional[str], int]:
+    cursor: str | None = None,
+) -> tuple[list[ItemOut], str | None, int]:
     if sort not in _SORTS:
         raise ApiError(422, "bad_sort", f"sort must be one of {sorted(_SORTS)}.")
     if order not in ("asc", "desc"):
@@ -124,8 +124,8 @@ def list_items(
         if sort in ("updated_at", "created_at", "due_at"):
             try:
                 v = datetime.fromisoformat(v)
-            except (TypeError, ValueError):
-                raise ApiError(400, "bad_cursor", "Malformed pagination cursor.")
+            except (TypeError, ValueError) as exc:
+                raise ApiError(400, "bad_cursor", "Malformed pagination cursor.") from exc
         cmp = (lambda a, b: a < b) if desc else (lambda a, b: a > b)
         page_where.append(or_(cmp(expr, v), and_(expr == v, cmp(WorkItem.id, c["id"]))))
 
@@ -141,8 +141,8 @@ def list_items(
 
 
 def list_events(
-    db: Session, item_id: int, *, limit: int = 20, cursor: Optional[str] = None
-) -> tuple[list[Event], Optional[str]]:
+    db: Session, item_id: int, *, limit: int = 20, cursor: str | None = None
+) -> tuple[list[Event], str | None]:
     """Newest first. Keyset on the autoincrement id, which is monotonic for an append-only table."""
     limit = max(1, min(limit, MAX_LIMIT))
     stmt = select(Event).where(Event.work_item_id == item_id)

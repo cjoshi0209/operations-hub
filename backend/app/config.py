@@ -18,12 +18,10 @@ class Settings:
     outbox_lease_seconds: int = 60
     idempotency_ttl_hours: int = 24
     token_ttl_hours: int = 12
+    login_max_failures: int = 8
+    login_window_seconds: int = 300
     # PBKDF2 cost; tests lower it so the suite stays fast.
-    password_iterations: int = field(
-        default_factory=lambda: int(os.environ.get("PASSWORD_ITERATIONS", "120000"))
-    )
+    password_iterations: int = field(default_factory=lambda: int(os.environ.get("PASSWORD_ITERATIONS", "120000")))
     cors_origins: list[str] = field(
-        default_factory=lambda: os.environ.get(
-            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-        ).split(",")
+        default_factory=lambda: os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
     )

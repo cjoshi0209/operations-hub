@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
+    DDL,
     JSON,
     CheckConstraint,
     DateTime,
-    DDL,
     ForeignKey,
     Index,
     Integer,
@@ -23,7 +23,7 @@ from .workflow import APPROVAL_STATUSES, PRIORITIES, STATUSES, TYPES
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UTCDateTime(TypeDecorator):
@@ -32,15 +32,15 @@ class UTCDateTime(TypeDecorator):
     impl = DateTime
     cache_ok = True
 
-    def process_bind_param(self, value: Optional[datetime], dialect):
+    def process_bind_param(self, value: datetime | None, dialect):
         if value is None:
             return None
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).replace(tzinfo=None)
 
-    def process_result_value(self, value: Optional[datetime], dialect):
-        return None if value is None else value.replace(tzinfo=timezone.utc)
+    def process_result_value(self, value: datetime | None, dialect):
+        return None if value is None else value.replace(tzinfo=UTC)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -97,16 +97,16 @@ class WorkItem(Base):
     priority: Mapped[str] = mapped_column(String(2))
     status: Mapped[str] = mapped_column(String(20), default="open")
     owning_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
-    assignee_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
-    due_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
-    resolution_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     team: Mapped[Team] = relationship(lazy="joined", innerjoin=True)
-    assignee: Mapped[Optional[User]] = relationship(foreign_keys=[assignee_id], lazy="joined")
+    assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id], lazy="joined")
     creator: Mapped[User] = relationship(foreign_keys=[created_by], lazy="joined", innerjoin=True)
 
     __table_args__ = (
@@ -188,8 +188,8 @@ class Approval(Base):
     approver_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(10), default="pending")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
-    decided_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
-    decision_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     requester: Mapped[User] = relationship(foreign_keys=[requested_by], lazy="joined", innerjoin=True)
     approver: Mapped[User] = relationship(foreign_keys=[approver_id], lazy="joined", innerjoin=True)
@@ -216,10 +216,10 @@ class Outbox(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(12), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     next_attempt_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
-    locked_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
-    processed_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
     __table_args__ = (

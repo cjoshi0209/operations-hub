@@ -5,7 +5,10 @@ approvals, an append-only history, and async notifications.
 
 * **Backend:** Python · FastAPI · SQLAlchemy 2 · SQLite (schema is Postgres-compatible — see below)
 * **Frontend:** React · Vite · TypeScript · TanStack Query
-* **Tests:** pytest (backend, 80 tests) · Vitest (frontend units, 17 tests)
+* **Tests:** pytest (backend, 88 tests) · Vitest (frontend units, 17 tests)
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, backend tests, frontend typecheck/tests and the production
+build on every push and pull request.
 
 Design notes live in [`docs/DESIGN.md`](docs/DESIGN.md) (written first), the trade-offs in
 [`ENGINEERING_DECISIONS.md`](ENGINEERING_DECISIONS.md).
@@ -30,6 +33,7 @@ pip install -r requirements.txt
 
 python -m app.seed --reset           # 4 teams, 12 users, 2,000 work items (prints the logins)
 python -m pytest                     # backend tests
+python -m ruff check . && python -m ruff format --check .   # optional: lint + format
 python -m uvicorn app.main:create_app --factory --port 8000
                                      # API on http://localhost:8000 (docs: /docs); also runs the outbox worker
 
@@ -103,6 +107,9 @@ All demo users share the password **`password123`** (demo data only, created by 
 To run the worker as its own process: `RUN_WORKER=0 python -m uvicorn app.main:create_app --factory` in one
 terminal and `python -m app.worker` in another.
 
+Operational endpoints: `GET /health` (liveness) and `GET /ready` (database reachable). Every response carries an
+`X-Request-ID` (an inbound one is honoured) that also appears in the access log and in 500 error bodies.
+
 ## Postgres compatibility
 
 The schema uses only portable SQLAlchemy types and constraints (check constraints, composite indexes, a partial
@@ -158,8 +165,9 @@ Every mutating endpoint accepts an `Idempotency-Key` header.
 * **The "send" in the outbox is a row in `notifications`.** No email/Slack/websocket delivery, and no read/unread
   state on the server (the bell remembers what you have seen in `localStorage`).
 * **Real-time is polling.** The detail page polls every 8 s and on window focus; there is no websocket/SSE push.
-* **Auth is deliberately minimal:** opaque tokens, no refresh, no rate limiting or lockout, no password change, no
-  SSO. Demo password is shared and documented. Do not expose this as-is.
+* **Auth is deliberately minimal:** opaque tokens, no refresh, no password change, no SSO. Failed logins are
+  throttled (8 per 5 min per email+IP) but the limiter is in-process, so it is per API worker. The demo password is
+  shared and documented. Do not expose this as-is.
 * **No admin UI.** Teams, users and memberships are managed via the seed script / database.
 * **Only successful responses are cached for idempotency.** A request that failed (e.g. 409) is not stored, so
   retrying the same key re-evaluates it — by design, but different from some payment APIs.

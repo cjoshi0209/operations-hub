@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { Alert, ItemRow, Spinner } from "../components/common";
 import NewItemDialog from "../components/NewItemDialog";
 import { STATUS_LABEL } from "../lib/actions";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [v, setV] = useState(value);
@@ -16,7 +17,7 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 function Attention() {
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useItems(
+  const { data, isLoading, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useItems(
     { needs_attention: true, sort: "priority", order: "asc" },
     8,
   );
@@ -27,7 +28,14 @@ function Attention() {
         Needs my attention <span className="count">{isLoading ? "" : total}</span>
       </h2>
       <p className="muted small">Assigned to me · awaiting my approval · P1 in my teams</p>
-      {error && <Alert kind="error">{(error as Error).message}</Alert>}
+      {error && (
+        <Alert kind="error">
+          {(error as Error).message}{" "}
+          <button className="link" onClick={() => refetch()}>
+            Retry
+          </button>
+        </Alert>
+      )}
       {isLoading && <Spinner />}
       {data && total === 0 && <p className="muted">Nothing needs you right now. 🎉</p>}
       <ul className="rows">
@@ -64,7 +72,7 @@ function Queue() {
     sort,
     order,
   };
-  const { data, isLoading, isFetching, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useItems(filters);
+  const { data, isLoading, isFetching, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useItems(filters);
   const items = data?.pages.flatMap((p) => p.items) ?? [];
   const total = data?.pages[0]?.total ?? 0;
 
@@ -125,7 +133,14 @@ function Queue() {
         </button>
       </div>
 
-      {error && <Alert kind="error">{(error as Error).message}</Alert>}
+      {error && (
+        <Alert kind="error">
+          {(error as Error).message}{" "}
+          <button className="link" onClick={() => refetch()}>
+            Retry
+          </button>
+        </Alert>
+      )}
       {isLoading ? (
         <Spinner />
       ) : (
@@ -152,6 +167,7 @@ function Queue() {
 
 export default function Overview() {
   const [creating, setCreating] = useState(false);
+  useDocumentTitle("Overview");
   return (
     <div className="stack">
       <div className="page-head">

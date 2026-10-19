@@ -3,6 +3,7 @@
 4 teams, 12 users, ~2,000 work items (with events, a few comments, approvals). Deterministic (fixed RNG seed).
 All demo users share the password in DEMO_PASSWORD. This is demo data only.
 """
+
 import argparse
 import random
 from datetime import timedelta
@@ -35,11 +36,34 @@ USERS = [
 ]
 
 SUBJECTS = [
-    "payment gateway", "login service", "billing export", "vendor invoice", "SOC2 evidence", "database failover",
-    "refund backlog", "access review", "VPN certificate", "data retention policy", "chargeback dispute",
-    "onboarding checklist", "audit log pipeline", "customer escalation", "API rate limits", "backup restore test",
-    "expense report", "firewall rule change", "ticket queue", "SLA breach", "password reset flow", "tax filing",
-    "disk usage alert", "GDPR request", "deploy pipeline", "reconciliation job", "phishing report", "license renewal",
+    "payment gateway",
+    "login service",
+    "billing export",
+    "vendor invoice",
+    "SOC2 evidence",
+    "database failover",
+    "refund backlog",
+    "access review",
+    "VPN certificate",
+    "data retention policy",
+    "chargeback dispute",
+    "onboarding checklist",
+    "audit log pipeline",
+    "customer escalation",
+    "API rate limits",
+    "backup restore test",
+    "expense report",
+    "firewall rule change",
+    "ticket queue",
+    "SLA breach",
+    "password reset flow",
+    "tax filing",
+    "disk usage alert",
+    "GDPR request",
+    "deploy pipeline",
+    "reconciliation job",
+    "phishing report",
+    "license renewal",
 ]
 VERBS = {
     "investigation": ["Investigate", "Triage", "Root-cause", "Analyse"],
@@ -51,11 +75,20 @@ VERBS = {
 TYPE_WEIGHTS = {"investigation": 25, "action": 35, "incident": 10, "approval": 15, "compliance": 15}
 PRIORITY_WEIGHTS = {"P1": 8, "P2": 22, "P3": 45, "P4": 25}
 STATUS_WEIGHTS = {
-    "open": 28, "in_progress": 27, "blocked": 8, "awaiting_approval": 7, "resolved": 12, "closed": 18,
+    "open": 28,
+    "in_progress": 27,
+    "blocked": 8,
+    "awaiting_approval": 7,
+    "resolved": 12,
+    "closed": 18,
 }
 COMMENTS = [
-    "Looking into this now.", "Blocked on the vendor, chasing.", "Can someone confirm the scope?",
-    "Fix is in staging, verifying.", "Adding evidence to the shared folder.", "Needs sign-off before we proceed.",
+    "Looking into this now.",
+    "Blocked on the vendor, chasing.",
+    "Can someone confirm the scope?",
+    "Fix is in staging, verifying.",
+    "Adding evidence to the shared folder.",
+    "Needs sign-off before we proceed.",
 ]
 
 
@@ -110,22 +143,59 @@ def seed(db: Database, n_items: int = 2000, password_iterations: int = 120_000, 
             version = rng.randint(1, 6)
             items.append(
                 dict(
-                    id=i, title=title, description=f"Auto-generated demo item about the {subject}.", type=type_,
-                    priority=prio, status=status, owning_team_id=tid, assignee_id=assignee, created_by=creator,
-                    created_at=created, updated_at=updated, due_at=due, version=version,
+                    id=i,
+                    title=title,
+                    description=f"Auto-generated demo item about the {subject}.",
+                    type=type_,
+                    priority=prio,
+                    status=status,
+                    owning_team_id=tid,
+                    assignee_id=assignee,
+                    created_by=creator,
+                    created_at=created,
+                    updated_at=updated,
+                    due_at=due,
+                    version=version,
                     resolution_note="Done and verified." if status == "closed" else None,
                 )
             )
-            events.append(dict(work_item_id=i, actor_id=creator, type="created",
-                               payload={"type": type_, "priority": prio}, created_at=created))
+            events.append(
+                dict(
+                    work_item_id=i,
+                    actor_id=creator,
+                    type="created",
+                    payload={"type": type_, "priority": prio},
+                    created_at=created,
+                )
+            )
             if assignee and status != "open":
-                events.append(dict(work_item_id=i, actor_id=assignee, type="claimed",
-                                   payload={"assignee_id": assignee}, created_at=created + timedelta(hours=1)))
-                events.append(dict(work_item_id=i, actor_id=assignee, type="status_changed",
-                                   payload={"from": "open", "to": status}, created_at=updated))
+                events.append(
+                    dict(
+                        work_item_id=i,
+                        actor_id=assignee,
+                        type="claimed",
+                        payload={"assignee_id": assignee},
+                        created_at=created + timedelta(hours=1),
+                    )
+                )
+                events.append(
+                    dict(
+                        work_item_id=i,
+                        actor_id=assignee,
+                        type="status_changed",
+                        payload={"from": "open", "to": status},
+                        created_at=updated,
+                    )
+                )
             if rng.random() < 0.15:
-                comments.append(dict(work_item_id=i, author_id=rng.choice(members[tid]),
-                                     body=rng.choice(COMMENTS), created_at=updated))
+                comments.append(
+                    dict(
+                        work_item_id=i,
+                        author_id=rng.choice(members[tid]),
+                        body=rng.choice(COMMENTS),
+                        created_at=updated,
+                    )
+                )
             if type_ == "approval":
                 approver_pool = [u for u in user_ids if u != creator and u in (leads.get(tid), *members[tid])]
                 approver = leads[tid] if leads[tid] != creator else rng.choice(approver_pool)
@@ -136,10 +206,16 @@ def seed(db: Database, n_items: int = 2000, password_iterations: int = 120_000, 
                 else:
                     a_status = rng.choices(["pending", "rejected", "none"], weights=[40, 10, 50])[0]
                 if a_status != "none":
-                    approvals.append(dict(
-                        work_item_id=i, requested_by=creator, approver_id=approver, status=a_status,
-                        created_at=created, decided_at=None if a_status == "pending" else updated,
-                    ))
+                    approvals.append(
+                        dict(
+                            work_item_id=i,
+                            requested_by=creator,
+                            approver_id=approver,
+                            status=a_status,
+                            created_at=created,
+                            decided_at=None if a_status == "pending" else updated,
+                        )
+                    )
         # Core bulk inserts: fast, and seed history needs no outbox rows (nothing to notify about).
         s.execute(insert(WorkItem), items)
         s.execute(insert(Event), events)

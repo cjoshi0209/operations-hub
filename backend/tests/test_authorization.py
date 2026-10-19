@@ -1,4 +1,5 @@
 """Resource-level authorization: visibility (404, never 403) and per-action permissions."""
+
 from sqlalchemy import func, select
 
 from app.models import Event
@@ -14,8 +15,9 @@ def test_other_team_gets_404_on_item_and_cannot_change_status(world):
     assert c.get(f"/work-items/{item_id}/events", headers=sec).status_code == 404
     assert c.get(f"/work-items/{item_id}/comments", headers=sec).status_code == 404
 
-    r = c.post(f"/work-items/{item_id}/transitions", headers=sec,
-               json={"to_status": "in_progress", "expected_version": 1})
+    r = c.post(
+        f"/work-items/{item_id}/transitions", headers=sec, json={"to_status": "in_progress", "expected_version": 1}
+    )
     assert r.status_code == 404
     assert c.patch(f"/work-items/{item_id}", headers=sec, json={"expected_version": 1, "title": "x"}).status_code == 404
     assert c.post(f"/work-items/{item_id}/claim", headers=sec).status_code == 404
@@ -81,16 +83,23 @@ def test_only_assignee_or_lead_can_change_status(world):
 
 def test_assignee_can_change_status(world):
     item_id = world.make_item(assignee="bob")
-    r = world.client().post(f"/work-items/{item_id}/transitions", headers=world.h("bob"),
-                            json={"to_status": "in_progress", "expected_version": 1})
+    r = world.client().post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("bob"),
+        json={"to_status": "in_progress", "expected_version": 1},
+    )
     assert r.status_code == 200 and r.json()["status"] == "in_progress"
 
 
 def test_only_team_members_can_edit_or_claim(world):
     item_id = world.make_item(team="Ops", assignee="erin")
     c = world.client()
-    assert c.patch(f"/work-items/{item_id}", headers=world.h("bob"),
-                   json={"expected_version": 1, "title": "ok"}).status_code == 200
+    assert (
+        c.patch(
+            f"/work-items/{item_id}", headers=world.h("bob"), json={"expected_version": 1, "title": "ok"}
+        ).status_code
+        == 200
+    )
     unassigned = world.make_item(team="Ops", approver="erin", type="approval", title="needs erin")
     # erin can see it (she is the approver) but is not on the Ops team
     c2 = c.post(f"/work-items/{unassigned}/claim", headers=world.h("erin"))
@@ -101,8 +110,8 @@ def test_allowed_actions_are_computed_per_user(world):
     item_id = world.make_item(assignee="bob")
     c = world.client()
     for who, expect_claim, expect_edit, expect_transition in [
-        ("alice", False, True, True),   # lead
-        ("bob", False, True, True),     # assignee
+        ("alice", False, True, True),  # lead
+        ("bob", False, True, True),  # assignee
         ("carol", False, True, False),  # plain member
     ]:
         actions = c.get(f"/work-items/{item_id}", headers=world.h(who)).json()["allowed_actions"]
@@ -145,6 +154,9 @@ def test_approver_outside_the_team_sees_the_item_and_gets_decide_actions(world):
 
 
 def test_cannot_create_items_for_a_team_you_are_not_in(world):
-    r = world.client().post("/work-items", headers=world.h("erin"), json={
-        "title": "sneaky", "type": "action", "priority": "P3", "owning_team_id": world.teams["Ops"]})
+    r = world.client().post(
+        "/work-items",
+        headers=world.h("erin"),
+        json={"title": "sneaky", "type": "action", "priority": "P3", "owning_team_id": world.teams["Ops"]},
+    )
     assert r.status_code == 403

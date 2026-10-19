@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth";
 import { Alert } from "../components/common";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 export default function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
+  useDocumentTitle("Sign in");
   const [email, setEmail] = useState("alice@example.com");
   const [password, setPassword] = useState("password123");
   const [error, setError] = useState<string | null>(null);

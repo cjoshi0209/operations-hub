@@ -17,6 +17,7 @@ import NoteDialog from "../components/NoteDialog";
 import Timeline from "../components/Timeline";
 import { can, changedUnderneath, TRANSITION_LABEL, transitionTargets } from "../lib/actions";
 import { formatDue, timeAgo } from "../lib/format";
+import { useDocumentTitle } from "../lib/useDocumentTitle";
 
 type Notice = { kind: "error" | "warn" | "info"; text: string };
 
@@ -43,6 +44,7 @@ export default function ItemDetail() {
   const decide = useDecideApproval(id);
   const requestApproval = useRequestApproval(id);
 
+  useDocumentTitle(item ? `#${item.id} ${item.title}` : undefined);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [acknowledged, setAcknowledged] = useState<number | undefined>(undefined);
   const [editing, setEditing] = useState(false);

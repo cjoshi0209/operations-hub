@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,12 +44,22 @@ IdemKey = Header(None, alias="Idempotency-Key", description="Makes the mutation 
 @router.post("/auth/login", response_model=LoginOut, tags=["auth"])
 def login(body: LoginIn, request: Request, db: Session = Depends(get_write_db)):
     settings = request.app.state.settings
-    user = db.execute(select(User).where(User.email == body.email.strip().lower())).scalar_one_or_none()
+    throttle = request.app.state.login_throttle
+    email = body.email.strip().lower()
+    key = f"{email}|{request.client.host if request.client else '?'}"
+    wait = throttle.retry_after(key)
+    if wait:
+        raise ApiError(
+            429, "too_many_attempts", f"Too many failed sign-ins. Try again in {wait}s.", retry_after_seconds=wait
+        )
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     # Verify even for unknown emails so response time does not reveal which accounts exist.
     stored = user.password_hash if user else hash_password("x", settings.password_iterations, salt=b"0" * 16)
     ok = verify_password(body.password, stored)
     if not (user and ok and user.is_active):
+        throttle.record_failure(key)
         raise ApiError(401, "invalid_credentials", "Wrong email or password.")
+    throttle.reset(key)
     token, row = issue_token(db, user, settings.token_ttl_hours)
     db.commit()
     return LoginOut(token=token, expires_at=row.expires_at, user=user_ref(user))
@@ -86,22 +94,32 @@ def teams(p: Principal = Depends(read_principal), db: Session = Depends(get_read
 # ---------- work items: reads ----------
 @router.get("/work-items", response_model=ItemPage, tags=["work-items"])
 def list_work_items(
-    status: Optional[list[str]] = Query(None),
-    priority: Optional[list[str]] = Query(None),
-    team_id: Optional[int] = None,
-    assignee: Optional[str] = Query(None, description="'me', 'none' or a user id"),
+    status: list[str] | None = Query(None),
+    priority: list[str] | None = Query(None),
+    team_id: int | None = None,
+    assignee: str | None = Query(None, description="'me', 'none' or a user id"),
     needs_attention: bool = False,
-    q: Optional[str] = Query(None, max_length=200, description="case-insensitive title search"),
+    q: str | None = Query(None, max_length=200, description="case-insensitive title search"),
     sort: str = "updated_at",
     order: str = "desc",
     limit: int = Query(25, ge=1, le=queries.MAX_LIMIT),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     p: Principal = Depends(read_principal),
     db: Session = Depends(get_read_db),
 ):
     items, next_cursor, total = queries.list_items(
-        db, p, statuses=status, priorities=priority, team_id=team_id, assignee=assignee,
-        needs_attention=needs_attention, q=q, sort=sort, order=order, limit=limit, cursor=cursor,
+        db,
+        p,
+        statuses=status,
+        priorities=priority,
+        team_id=team_id,
+        assignee=assignee,
+        needs_attention=needs_attention,
+        q=q,
+        sort=sort,
+        order=order,
+        limit=limit,
+        cursor=cursor,
     )
     return ItemPage(items=items, next_cursor=next_cursor, total=total)
 
@@ -116,14 +134,16 @@ def get_work_item(
     item = services.get_visible_item(db, p, item_id)
     events, next_cursor = queries.list_events(db, item.id, limit=events_limit)
     base = single_item_out(db, p, item)
-    return ItemDetail(**base.model_dump(), events=EventPage(items=[event_out(e) for e in events], next_cursor=next_cursor))
+    return ItemDetail(
+        **base.model_dump(), events=EventPage(items=[event_out(e) for e in events], next_cursor=next_cursor)
+    )
 
 
 @router.get("/work-items/{item_id}/events", response_model=EventPage, tags=["work-items"])
 def get_events(
     item_id: int,
     limit: int = Query(20, ge=1, le=queries.MAX_LIMIT),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     p: Principal = Depends(read_principal),
     db: Session = Depends(get_read_db),
 ):
@@ -136,7 +156,7 @@ def get_events(
 def get_comments(
     item_id: int,
     limit: int = Query(20, ge=1, le=queries.MAX_LIMIT),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     p: Principal = Depends(read_principal),
     db: Session = Depends(get_read_db),
 ):
@@ -156,7 +176,7 @@ def get_comments(
 
 
 # ---------- work items: writes (all idempotent-capable) ----------
-def _idem(request: Request, db: Session, p: Principal, key: Optional[str], payload, action):
+def _idem(request: Request, db: Session, p: Principal, key: str | None, payload, action):
     return run_idempotent(
         db,
         user_id=p.id,
@@ -173,12 +193,18 @@ def _idem(request: Request, db: Session, p: Principal, key: Optional[str], paylo
 def create_work_item(
     body: ItemCreate,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, body.model_dump(mode="json"),
-                 lambda: (201, services.create_item(db, p, body).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        body.model_dump(mode="json"),
+        lambda: (201, services.create_item(db, p, body).model_dump(mode="json")),
+    )
 
 
 @router.patch("/work-items/{item_id}", response_model=None, tags=["work-items"])
@@ -186,25 +212,37 @@ def patch_work_item(
     item_id: int,
     body: ItemPatch,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
     payload = body.model_dump(mode="json", exclude_unset=True)
-    return _idem(request, db, p, idempotency_key, payload,
-                 lambda: (200, services.update_item(db, p, item_id, body).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        payload,
+        lambda: (200, services.update_item(db, p, item_id, body).model_dump(mode="json")),
+    )
 
 
 @router.post("/work-items/{item_id}/claim", response_model=None, tags=["work-items"])
 def claim_work_item(
     item_id: int,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, None,
-                 lambda: (200, services.claim_item(db, p, item_id).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        None,
+        lambda: (200, services.claim_item(db, p, item_id).model_dump(mode="json")),
+    )
 
 
 @router.post("/work-items/{item_id}/transitions", response_model=None, tags=["work-items"])
@@ -212,12 +250,18 @@ def transition_work_item(
     item_id: int,
     body: TransitionIn,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, body.model_dump(mode="json"),
-                 lambda: (200, services.transition_item(db, p, item_id, body).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        body.model_dump(mode="json"),
+        lambda: (200, services.transition_item(db, p, item_id, body).model_dump(mode="json")),
+    )
 
 
 @router.post("/work-items/{item_id}/comments", status_code=201, response_model=None, tags=["comments"])
@@ -225,12 +269,18 @@ def post_comment(
     item_id: int,
     body: CommentIn,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, body.model_dump(mode="json"),
-                 lambda: (201, comment_out(services.add_comment(db, p, item_id, body.body)).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        body.model_dump(mode="json"),
+        lambda: (201, comment_out(services.add_comment(db, p, item_id, body.body)).model_dump(mode="json")),
+    )
 
 
 @router.post("/work-items/{item_id}/approval", status_code=201, response_model=None, tags=["approvals"])
@@ -238,12 +288,18 @@ def request_approval(
     item_id: int,
     body: ApprovalRequestIn,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, body.model_dump(mode="json"),
-                 lambda: (201, services.request_approval(db, p, item_id, body.approver_id).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        body.model_dump(mode="json"),
+        lambda: (201, services.request_approval(db, p, item_id, body.approver_id).model_dump(mode="json")),
+    )
 
 
 @router.post("/work-items/{item_id}/approval/decision", response_model=None, tags=["approvals"])
@@ -251,19 +307,25 @@ def decide_approval(
     item_id: int,
     body: ApprovalDecisionIn,
     request: Request,
-    idempotency_key: Optional[str] = IdemKey,
+    idempotency_key: str | None = IdemKey,
     p: Principal = Depends(write_principal),
     db: Session = Depends(get_write_db),
 ):
-    return _idem(request, db, p, idempotency_key, body.model_dump(mode="json"),
-                 lambda: (200, services.decide_approval(db, p, item_id, body.decision, body.note).model_dump(mode="json")))
+    return _idem(
+        request,
+        db,
+        p,
+        idempotency_key,
+        body.model_dump(mode="json"),
+        lambda: (200, services.decide_approval(db, p, item_id, body.decision, body.note).model_dump(mode="json")),
+    )
 
 
 # ---------- notifications ----------
 @router.get("/notifications", response_model=NotificationPage, tags=["notifications"])
 def list_notifications(
     limit: int = Query(20, ge=1, le=queries.MAX_LIMIT),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     p: Principal = Depends(read_principal),
     db: Session = Depends(get_read_db),
 ):

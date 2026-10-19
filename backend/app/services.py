@@ -5,8 +5,10 @@ Every mutation follows the same shape:
     ->  guarded UPDATE ... WHERE version = V  ->  Event + Outbox in the same transaction.
 The caller commits. Raising ApiError aborts the whole transaction, so there are no partial writes.
 """
+
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -14,7 +16,7 @@ from sqlalchemy.orm import Session
 from .auth import Principal
 from .errors import ApiError, not_found
 from .models import Approval, Comment, Event, Outbox, TeamMembership, User, WorkItem, utcnow
-from .permissions import can_change_status, can_claim, can_decide_approval, can_edit, visible_clause
+from .permissions import can_change_status, can_decide_approval, can_edit, visible_clause
 from .schemas import ItemCreate, ItemOut, ItemPatch, TransitionIn
 from .serializers import latest_approvals, single_item_out, user_ref
 from .workflow import check_transition
@@ -156,15 +158,25 @@ def create_item(db: Session, p: Principal, data: ItemCreate) -> ItemOut:
     db.add(item)
     db.flush()
     record_event(
-        db, item, p.user, "created", {"type": data.type, "priority": data.priority},
-        [data.assignee_id], f"{p.user.name} created #{item.id} {item.title}",
+        db,
+        item,
+        p.user,
+        "created",
+        {"type": data.type, "priority": data.priority},
+        [data.assignee_id],
+        f"{p.user.name} created #{item.id} {item.title}",
     )
     if data.type == "approval" and approver is not None:
         db.add(Approval(work_item_id=item.id, requested_by=p.id, approver_id=approver.id, status="pending"))
         db.flush()
         record_event(
-            db, item, p.user, "approval_requested", {"approver_id": approver.id},
-            [approver.id], f"{p.user.name} asked you to approve #{item.id} {item.title}",
+            db,
+            item,
+            p.user,
+            "approval_requested",
+            {"approver_id": approver.id},
+            [approver.id],
+            f"{p.user.name} asked you to approve #{item.id} {item.title}",
         )
     return single_item_out(db, p, reload_item(db, item.id))
 
@@ -194,8 +206,13 @@ def claim_item(db: Session, p: Principal, item_id: int) -> ItemOut:
         raise ApiError(409, "item_closed", "Closed items cannot be claimed.")
     item = reload_item(db, item.id)
     record_event(
-        db, item, p.user, "claimed", {"assignee_id": p.id},
-        [item.created_by], f"{p.user.name} took ownership of #{item.id} {item.title}",
+        db,
+        item,
+        p.user,
+        "claimed",
+        {"assignee_id": p.id},
+        [item.created_by],
+        f"{p.user.name} took ownership of #{item.id} {item.title}",
     )
     return single_item_out(db, p, item)
 
@@ -240,7 +257,11 @@ def update_item(db: Session, p: Principal, item_id: int, data: ItemPatch) -> Ite
     old_assignee = item.assignee_id
     item = guarded_update(db, p, item, data.expected_version, values)
     record_event(
-        db, item, p.user, "updated", {"changes": changes},
+        db,
+        item,
+        p.user,
+        "updated",
+        {"changes": changes},
         [item.assignee_id, old_assignee, item.created_by],
         f"{p.user.name} updated #{item.id} {item.title}",
     )
@@ -271,8 +292,16 @@ def transition_item(db: Session, p: Principal, item_id: int, data: TransitionIn)
     if data.to_status == "closed":
         payload["resolution_note"] = note
     record_event(
-        db, item, p.user, "status_changed", payload,
-        [item.assignee_id, item.created_by, approval.approver_id if approval and approval.status == "pending" else None],
+        db,
+        item,
+        p.user,
+        "status_changed",
+        payload,
+        [
+            item.assignee_id,
+            item.created_by,
+            approval.approver_id if approval and approval.status == "pending" else None,
+        ],
         f"{p.user.name} moved #{item.id} {item.title} to {data.to_status}",
     )
     return single_item_out(db, p, item)
@@ -286,9 +315,16 @@ def add_comment(db: Session, p: Principal, item_id: int, body: str) -> Comment:
     db.flush()
     approval = _current_approval(db, item.id)
     record_event(
-        db, item, p.user, "comment_added",
+        db,
+        item,
+        p.user,
+        "comment_added",
         {"comment_id": comment.id, "excerpt": body[:140]},
-        [item.assignee_id, item.created_by, approval.approver_id if approval and approval.status == "pending" else None],
+        [
+            item.assignee_id,
+            item.created_by,
+            approval.approver_id if approval and approval.status == "pending" else None,
+        ],
         f"{p.user.name} commented on #{item.id} {item.title}",
     )
     db.refresh(comment)
@@ -314,8 +350,13 @@ def request_approval(db: Session, p: Principal, item_id: int, approver_id: int) 
     db.flush()
     item = guarded_update(db, p, item, item.version, {})
     record_event(
-        db, item, p.user, "approval_requested", {"approver_id": approver.id},
-        [approver.id], f"{p.user.name} asked you to approve #{item.id} {item.title}",
+        db,
+        item,
+        p.user,
+        "approval_requested",
+        {"approver_id": approver.id},
+        [approver.id],
+        f"{p.user.name} asked you to approve #{item.id} {item.title}",
     )
     return single_item_out(db, p, item)
 
@@ -339,7 +380,11 @@ def decide_approval(db: Session, p: Principal, item_id: int, decision: str, note
         raise ApiError(409, "approval_already_decided", "This approval was just decided by someone else.")
     item = guarded_update(db, p, item, item.version, {})
     record_event(
-        db, item, p.user, "approval_decided", {"decision": decision, "note": note},
+        db,
+        item,
+        p.user,
+        "approval_decided",
+        {"decision": decision, "note": note},
         [approval.requested_by, item.assignee_id, item.created_by],
         f"{p.user.name} {decision} #{item.id} {item.title}",
     )

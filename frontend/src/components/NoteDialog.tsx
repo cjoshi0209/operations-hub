@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import Modal from "./Modal";
 
 export default function NoteDialog({
   title,
@@ -23,12 +24,11 @@ export default function NoteDialog({
     onConfirm(note.trim());
   }
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <form className="modal card" onSubmit={submit}>
-        <h2>{title}</h2>
+    <Modal title={title} onClose={onCancel} busy={pending}>
+      <form onSubmit={submit}>
         <label>
           {label}
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} autoFocus required={required} />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} required={required} />
         </label>
         <div className="actions">
           <button type="button" onClick={onCancel} disabled={pending}>
@@ -39,6 +39,6 @@ export default function NoteDialog({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

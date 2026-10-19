@@ -1,8 +1,10 @@
 """Transactional outbox: atomic with the event, retried on failure, never delivered twice."""
+
 from datetime import timedelta
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError
 
 from app import services
 from app.auth import Principal
@@ -19,14 +21,17 @@ def _rows(world, model):
 def _mutate(world):
     """alice (lead) moves bob's item -> bob (assignee) and alice's creator-side recipients get notified."""
     item_id = world.make_item(assignee="bob", creator="carol")
-    r = world.client().post(f"/work-items/{item_id}/transitions", headers=world.h("alice"),
-                            json={"to_status": "in_progress", "expected_version": 1})
+    r = world.client().post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("alice"),
+        json={"to_status": "in_progress", "expected_version": 1},
+    )
     assert r.status_code == 200
     return item_id
 
 
 def test_event_and_outbox_row_are_written_together(world):
-    item_id = _mutate(world)
+    _mutate(world)
     events, outbox = _rows(world, Event), _rows(world, Outbox)
     assert len(events) == len(outbox) == 1
     assert outbox[0].event_id == events[0].id
@@ -39,8 +44,11 @@ def test_event_and_outbox_row_are_written_together(world):
 def test_failed_transaction_leaves_neither_event_nor_outbox(world):
     """Rule violation mid-request: the whole transaction rolls back, so no orphan outbox row exists."""
     item_id = world.make_item(status="open")
-    r = world.client().post(f"/work-items/{item_id}/transitions", headers=world.h("alice"),
-                            json={"to_status": "resolved", "expected_version": 1})
+    r = world.client().post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("alice"),
+        json={"to_status": "resolved", "expected_version": 1},
+    )
     assert r.status_code == 409
     assert _rows(world, Event) == [] and _rows(world, Outbox) == []
 
@@ -172,12 +180,10 @@ def test_events_are_append_only(world):
     _mutate(world)
     from sqlalchemy import delete, update
 
-    with world.db.write_session() as s:
-        with pytest.raises(Exception):
-            s.execute(update(Event).values(type="tampered"))
-            s.commit()
-    with world.db.write_session() as s:
-        with pytest.raises(Exception):
-            s.execute(delete(Event))
-            s.commit()
+    with world.db.write_session() as s, pytest.raises(DBAPIError, match="append-only"):
+        s.execute(update(Event).values(type="tampered"))
+        s.commit()
+    with world.db.write_session() as s, pytest.raises(DBAPIError, match="append-only"):
+        s.execute(delete(Event))
+        s.commit()
     assert _rows(world, Event)[0].type == "status_changed"

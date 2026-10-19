@@ -4,10 +4,11 @@ The stored response is written in the *same transaction* as the side effects, so
 "the effects were committed", and a crash can never leave an effect without its key (or vice versa).
 Only successful responses are stored; a failed request rolls back and may be retried with the same key.
 """
+
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Callable
 
 from fastapi.responses import JSONResponse
 from sqlalchemy import delete, select
@@ -92,6 +93,6 @@ def run_idempotent(
         db.rollback()
         winner = _find(db, user_id, key, ttl_hours)
         if winner is None or winner.request_hash != fingerprint:
-            raise ApiError(409, "idempotency_conflict", "A concurrent request with this key is in progress.")
+            raise ApiError(409, "idempotency_conflict", "A concurrent request with this key is in progress.") from None
         return _replay(winner)
     return JSONResponse(status_code=status, content=body)

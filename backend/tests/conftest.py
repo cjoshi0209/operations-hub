@@ -1,9 +1,7 @@
 import threading
-from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
 from app.auth import hash_password
 from app.config import Settings
@@ -53,20 +51,45 @@ class World:
         return headers
 
     # --- data --------------------------------------------------------------------------------------------
-    def make_item(self, *, team="Ops", creator="alice", assignee=None, status="open", type="action",
-                  priority="P3", title="Rotate the signing keys", approver=None, approval_status="pending") -> int:
+    def make_item(
+        self,
+        *,
+        team="Ops",
+        creator="alice",
+        assignee=None,
+        status="open",
+        type="action",
+        priority="P3",
+        title="Rotate the signing keys",
+        approver=None,
+        approval_status="pending",
+    ) -> int:
         with self.db.write_session() as s:
             now = utcnow()
             item = WorkItem(
-                title=title, description="", type=type, priority=priority, status=status,
-                owning_team_id=self.teams[team], assignee_id=self.users[assignee] if assignee else None,
-                created_by=self.users[creator], created_at=now, updated_at=now, version=1,
+                title=title,
+                description="",
+                type=type,
+                priority=priority,
+                status=status,
+                owning_team_id=self.teams[team],
+                assignee_id=self.users[assignee] if assignee else None,
+                created_by=self.users[creator],
+                created_at=now,
+                updated_at=now,
+                version=1,
             )
             s.add(item)
             s.flush()
             if approver:
-                s.add(Approval(work_item_id=item.id, requested_by=self.users[creator],
-                               approver_id=self.users[approver], status=approval_status))
+                s.add(
+                    Approval(
+                        work_item_id=item.id,
+                        requested_by=self.users[creator],
+                        approver_id=self.users[approver],
+                        status=approval_status,
+                    )
+                )
             s.commit()
             return item.id
 

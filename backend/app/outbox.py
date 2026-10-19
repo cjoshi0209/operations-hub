@@ -11,11 +11,12 @@ Row life cycle:  pending --claim--> processing --deliver ok--> done
 * ``unique(outbox_id, user_id)`` on notifications makes a repeated delivery a no-op, so even a crash between
   "notifications committed" and "row marked done" cannot notify anyone twice.
 """
+
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable, Optional
 
 from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -30,7 +31,7 @@ Deliver = Callable[[Session, Outbox], None]
 
 
 def backoff_seconds(attempts: int) -> int:
-    return min(2 ** attempts, 300)
+    return min(2**attempts, 300)
 
 
 def deliver_notifications(db: Session, row: Outbox) -> None:
@@ -64,7 +65,7 @@ def process_batch(
     db: Database,
     *,
     deliver: Deliver = deliver_notifications,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
     batch_size: int = 50,
     max_attempts: int = 5,
     lease_seconds: int = 60,
@@ -164,7 +165,7 @@ class OutboxWorker:
         self.poll_seconds = poll_seconds
         self.kwargs = kwargs
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def run_forever(self) -> None:
         ticks = 0

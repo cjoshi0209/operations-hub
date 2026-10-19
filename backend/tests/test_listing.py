@@ -1,4 +1,5 @@
 """List endpoint: filters, search, sorting, keyset pagination, and "needs my attention"."""
+
 from datetime import timedelta
 
 from sqlalchemy import update
@@ -61,7 +62,7 @@ def test_total_is_reported_but_only_one_page_is_loaded(world):
 
 
 def test_limit_is_capped(world):
-    for n in range(3):
+    for _ in range(3):
         world.make_item()
     r = world.client().get("/work-items?limit=100000", headers=world.h("alice"))
     assert r.status_code == 422  # the server refuses to hand out the whole dataset
@@ -93,7 +94,7 @@ def test_title_search_is_case_insensitive_and_escapes_wildcards(world):
     titles = lambda q: sorted(i["title"] for i in _get(world, "alice", f"?q={q}")["items"])  # noqa: E731
     assert titles("PAYMENT") == ["Payment gateway outage", "Rotate payment keys"]
     assert titles("%25") == ["100% uptime review"]  # a literal %, not "match everything"
-    assert titles("_") == []                         # a literal underscore, not "any one char"
+    assert titles("_") == []  # a literal underscore, not "any one char"
     assert titles("nomatch") == []
 
 
@@ -112,15 +113,17 @@ def test_bad_params_are_client_errors(world):
 
 def test_needs_my_attention(world):
     mine = world.make_item(title="assigned to alice", assignee="alice", priority="P3")
-    awaiting = world.make_item(title="needs alice approval", type="approval", creator="bob", approver="alice",
-                               priority="P3")
+    awaiting = world.make_item(
+        title="needs alice approval", type="approval", creator="bob", approver="alice", priority="P3"
+    )
     p1 = world.make_item(title="p1 in my team", priority="P1")
     world.make_item(title="p1 elsewhere", team="Sec", creator="dave", priority="P1")
     world.make_item(title="p3 nobody", priority="P3")
     world.make_item(title="assigned but resolved", assignee="alice", status="resolved")
     world.make_item(title="p1 but closed", priority="P1", status="closed")
-    world.make_item(title="already decided", type="approval", creator="bob", approver="alice",
-                    approval_status="approved")
+    world.make_item(
+        title="already decided", type="approval", creator="bob", approver="alice", approval_status="approved"
+    )
 
     body = _get(world, "alice", "?needs_attention=true")
     by_title = {i["title"]: i for i in body["items"]}

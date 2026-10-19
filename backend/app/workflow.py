@@ -1,4 +1,5 @@
 """Workflow rules: the single source of truth for statuses and allowed transitions."""
+
 from .errors import ApiError
 
 STATUSES = ("open", "in_progress", "blocked", "awaiting_approval", "resolved", "closed")

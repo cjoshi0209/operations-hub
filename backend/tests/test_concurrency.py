@@ -1,9 +1,9 @@
 """The three concurrency mechanisms: conditional claim, optimistic versioning, idempotency keys."""
-import threading
 
-import pytest
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from sqlalchemy import func, select
 
 from app.models import Event, IdempotencyKey, Outbox
@@ -35,9 +35,7 @@ def test_concurrent_claims_exactly_one_wins(world):
     item_id = world.make_item()
     claimants = ["alice", "bob"]
 
-    results = _race(
-        world, 2, lambda i, c: c.post(f"/work-items/{item_id}/claim", headers=world.h(claimants[i]))
-    )
+    results = _race(world, 2, lambda i, c: c.post(f"/work-items/{item_id}/claim", headers=world.h(claimants[i])))
 
     codes = sorted(r.status_code for r in results)
     assert codes == [200, 409]
@@ -54,9 +52,7 @@ def test_concurrent_claims_exactly_one_wins(world):
 def test_many_concurrent_claims_still_exactly_one(world):
     item_id = world.make_item()
     team = ["alice", "bob", "carol"]
-    results = _race(
-        world, 12, lambda i, c: c.post(f"/work-items/{item_id}/claim", headers=world.h(team[i % 3]))
-    )
+    results = _race(world, 12, lambda i, c: c.post(f"/work-items/{item_id}/claim", headers=world.h(team[i % 3])))
     assert sum(r.status_code == 200 for r in results) == 1
     assert sum(r.status_code == 409 for r in results) == 11
     assert _count(world, Event, work_item_id=item_id, type="claimed") == 1
@@ -73,12 +69,14 @@ def test_claiming_a_claimed_item_returns_409_with_owner(world):
 def test_patch_with_stale_version_returns_409_and_current_item(world):
     item_id = world.make_item()
     c = world.client()
-    first = c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                    json={"expected_version": 1, "title": "Edited by Alice"})
+    first = c.patch(
+        f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 1, "title": "Edited by Alice"}
+    )
     assert first.status_code == 200 and first.json()["version"] == 2
 
-    stale = c.patch(f"/work-items/{item_id}", headers=world.h("bob"),
-                    json={"expected_version": 1, "title": "Edited by Bob"})
+    stale = c.patch(
+        f"/work-items/{item_id}", headers=world.h("bob"), json={"expected_version": 1, "title": "Edited by Bob"}
+    )
     assert stale.status_code == 409
     err = stale.json()["error"]
     assert err["code"] == "version_conflict"
@@ -96,9 +94,11 @@ def test_patch_requires_expected_version(world):
 def test_concurrent_patches_same_version_only_one_applies(world):
     item_id = world.make_item()
     results = _race(
-        world, 6,
-        lambda i, c: c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                             json={"expected_version": 1, "title": f"title {i}"}),
+        world,
+        6,
+        lambda i, c: c.patch(
+            f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 1, "title": f"title {i}"}
+        ),
     )
     assert sorted(r.status_code for r in results) == [200] + [409] * 5
     assert world.item(item_id).version == 2
@@ -107,10 +107,17 @@ def test_concurrent_patches_same_version_only_one_applies(world):
 def test_stale_status_change_is_rejected_too(world):
     item_id = world.make_item(assignee="bob")
     c = world.client()
-    assert c.patch(f"/work-items/{item_id}", headers=world.h("bob"),
-                   json={"expected_version": 1, "priority": "P1"}).status_code == 200
-    r = c.post(f"/work-items/{item_id}/transitions", headers=world.h("bob"),
-               json={"to_status": "in_progress", "expected_version": 1})
+    assert (
+        c.patch(
+            f"/work-items/{item_id}", headers=world.h("bob"), json={"expected_version": 1, "priority": "P1"}
+        ).status_code
+        == 200
+    )
+    r = c.post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("bob"),
+        json={"to_status": "in_progress", "expected_version": 1},
+    )
     assert r.status_code == 409 and r.json()["error"]["code"] == "version_conflict"
 
 
@@ -165,9 +172,11 @@ def test_idempotency_keys_are_scoped_per_user(world):
 def test_concurrent_requests_with_same_key_create_one_event(world):
     item_id = world.make_item()
     results = _race(
-        world, 6,
-        lambda i, c: c.post(f"/work-items/{item_id}/comments", headers=world.h("alice", "dup-comment"),
-                            json={"body": "hello"}),
+        world,
+        6,
+        lambda i, c: c.post(
+            f"/work-items/{item_id}/comments", headers=world.h("alice", "dup-comment"), json={"body": "hello"}
+        ),
     )
     assert all(r.status_code == 201 for r in results)
     assert len({r.text for r in results}) == 1
@@ -177,11 +186,17 @@ def test_concurrent_requests_with_same_key_create_one_event(world):
 def test_failed_request_is_not_cached_so_retry_with_same_key_works(world):
     item_id = world.make_item(assignee="bob")
     c = world.client()
-    bad = c.post(f"/work-items/{item_id}/transitions", headers=world.h("bob", "retry-me"),
-                 json={"to_status": "in_progress", "expected_version": 99})
+    bad = c.post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("bob", "retry-me"),
+        json={"to_status": "in_progress", "expected_version": 99},
+    )
     assert bad.status_code == 409
-    good = c.post(f"/work-items/{item_id}/transitions", headers=world.h("bob", "retry-me"),
-                  json={"to_status": "in_progress", "expected_version": 1})
+    good = c.post(
+        f"/work-items/{item_id}/transitions",
+        headers=world.h("bob", "retry-me"),
+        json={"to_status": "in_progress", "expected_version": 1},
+    )
     assert good.status_code == 200
     assert _count(world, IdempotencyKey) == 1
 
@@ -221,8 +236,12 @@ def test_version_guard_is_in_the_sql_not_just_the_early_check(world, monkeypatch
     item_id = world.make_item()
     with world.db.read_session() as s:
         stale = s.get(type(world.item(item_id)), item_id)  # version 1
-    assert world.client().patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                                json={"expected_version": 1, "title": "winner"}).status_code == 200
+    assert (
+        world.client()
+        .patch(f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 1, "title": "winner"})
+        .status_code
+        == 200
+    )
 
     monkeypatch.setattr(services, "get_visible_item", lambda db, p, i: stale)  # in-memory version still 1
     with world.db.write_session() as s:

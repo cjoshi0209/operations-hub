@@ -5,6 +5,7 @@ import { useCreateItem, useTeams } from "../api/hooks";
 import type { ItemType, Priority } from "../api/types";
 import { useAuth } from "../auth";
 import { Alert } from "./common";
+import Modal from "./Modal";
 
 const TYPES: ItemType[] = ["investigation", "action", "incident", "approval", "compliance"];
 
@@ -45,13 +46,12 @@ export default function NewItemDialog({ onClose }: { onClose: () => void }) {
 
   const err = create.error;
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="New work item">
-      <form className="modal card" onSubmit={submit}>
-        <h2>New work item</h2>
+    <Modal title="New work item" onClose={onClose} busy={create.isPending}>
+      <form onSubmit={submit}>
         {err && <Alert kind="error">{err instanceof ApiError ? err.message : "Could not create the item."}</Alert>}
         <label>
           Title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} autoFocus />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} />
         </label>
         <label>
           Description
@@ -111,6 +111,6 @@ export default function NewItemDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

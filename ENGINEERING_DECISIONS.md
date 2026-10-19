@@ -97,7 +97,8 @@ match the SQLite triggers.
 Given a ~4 hour budget, "a smaller system that behaves well" won over breadth:
 
 * **No real notification channels, read/unread state, or websockets/SSE** — polling and a `notifications` table.
-* **No SSO, refresh tokens, rate limiting, password management, or admin UI** — seeded users, opaque bearer tokens.
+* **No SSO, refresh tokens, password management, or admin UI** — seeded users, opaque bearer tokens. Login has an
+  in-process failed-attempt throttle only (a shared store would be needed across workers).
 * **No Alembic migrations** — `create_all` plus a `--reset` seed. Fine for a take-home; a real service needs migrations.
 * **No full-text search** — escaped `ILIKE` on titles; `pg_trgm`/FTS is the upgrade path.
 * **No per-item ACLs, delegation, or SLA timers**; approvals are a single approver per request.

@@ -4,6 +4,7 @@ import { useEditItem, useTeams } from "../api/hooks";
 import type { Priority, WorkItem } from "../api/types";
 import { isoToLocalInput, localInputToIso } from "../lib/format";
 import { Alert } from "./common";
+import Modal from "./Modal";
 
 /**
  * Edit form. `baseVersion` is the version the user is editing against; it is sent as `expected_version`.
@@ -12,6 +13,7 @@ import { Alert } from "./common";
  */
 export default function EditDialog({ item, onClose }: { item: WorkItem; onClose: () => void }) {
   const edit = useEditItem(item.id);
+  const [initial] = useState(item); // what the user started from; only fields they changed are sent
   const teams = useTeams();
   const [baseVersion, setBaseVersion] = useState(item.version);
   const [title, setTitle] = useState(item.title);
@@ -22,17 +24,22 @@ export default function EditDialog({ item, onClose }: { item: WorkItem; onClose:
   const [conflict, setConflict] = useState<WorkItem | null>(null);
   const members = teams.data?.find((t) => t.id === item.owning_team.id)?.members ?? [];
 
+  // Send only what the user actually changed, so a retry after a conflict never silently reverts
+  // someone else's edit to a field this user didn't touch.
+  const changes: Record<string, unknown> = {};
+  if (title.trim() !== initial.title) changes.title = title;
+  if (description !== initial.description) changes.description = description;
+  if (priority !== initial.priority) changes.priority = priority;
+  if (due !== isoToLocalInput(initial.due_at)) changes.due_at = localInputToIso(due);
+  if ((assignee === "" ? null : assignee) !== (initial.assignee?.id ?? null)) {
+    changes.assignee_id = assignee === "" ? null : assignee;
+  }
+  const dirty = Object.keys(changes).length > 0;
+
   function submit(e: FormEvent) {
     e.preventDefault();
     edit.mutate(
-      {
-        expected_version: baseVersion,
-        title,
-        description,
-        priority,
-        due_at: localInputToIso(due),
-        assignee_id: assignee === "" ? null : assignee,
-      },
+      { expected_version: baseVersion, ...changes },
       {
         onSuccess: () => onClose(),
         onError: (err) => {
@@ -47,15 +54,14 @@ export default function EditDialog({ item, onClose }: { item: WorkItem; onClose:
 
   const err = edit.error;
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Edit work item">
-      <form className="modal card" onSubmit={submit}>
-        <h2>Edit #{item.id}</h2>
+    <Modal title={`Edit #${item.id}`} onClose={onClose} busy={edit.isPending}>
+      <form onSubmit={submit}>
         {conflict && (
           <Alert kind="warn">
             <strong>Not saved — this item changed while you were editing.</strong> It is now at version{" "}
-            {conflict.version} (last updated by someone else). Your draft below is untouched; review it against
-            the latest values (title: “{conflict.title}”, priority {conflict.priority}) and save again, or cancel
-            to discard.
+            {conflict.version} (last updated by someone else). Your draft below is untouched; only the fields you
+            changed will be sent. Latest values — title: “{conflict.title}”, priority {conflict.priority}. Save again
+            to apply your changes on top, or cancel to discard.
           </Alert>
         )}
         {err && !conflict && <Alert kind="error">{err instanceof ApiError ? err.message : "Save failed."}</Alert>}
@@ -96,11 +102,11 @@ export default function EditDialog({ item, onClose }: { item: WorkItem; onClose:
           <button type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="primary" disabled={edit.isPending || !title.trim()}>
+          <button className="primary" disabled={edit.isPending || !title.trim() || !dirty}>
             {edit.isPending ? "Saving…" : conflict ? "Save over latest" : "Save"}
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

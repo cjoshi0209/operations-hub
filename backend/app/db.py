@@ -8,6 +8,7 @@ Two engines point at the same database:
 
 On Postgres both engines are identical; the guarded UPDATEs and unique constraints carry the guarantees.
 """
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker

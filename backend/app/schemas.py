@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,8 +25,8 @@ class ApprovalOut(BaseModel):
     approver: UserRef
     requested_by: UserRef
     created_at: datetime
-    decided_at: Optional[datetime] = None
-    decision_note: Optional[str] = None
+    decided_at: datetime | None = None
+    decision_note: str | None = None
 
 
 class ItemOut(BaseModel):
@@ -37,14 +37,14 @@ class ItemOut(BaseModel):
     priority: Priority
     status: Status
     owning_team: TeamRef
-    assignee: Optional[UserRef] = None
+    assignee: UserRef | None = None
     created_by: UserRef
     created_at: datetime
     updated_at: datetime
-    due_at: Optional[datetime] = None
+    due_at: datetime | None = None
     version: int
-    resolution_note: Optional[str] = None
-    approval: Optional[ApprovalOut] = None
+    resolution_note: str | None = None
+    approval: ApprovalOut | None = None
     allowed_actions: list[str]
     attention_reasons: list[str] = []
 
@@ -59,7 +59,7 @@ class EventOut(BaseModel):
 
 class EventPage(BaseModel):
     items: list[EventOut]
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
 
 
 class ItemDetail(ItemOut):
@@ -68,7 +68,7 @@ class ItemDetail(ItemOut):
 
 class ItemPage(BaseModel):
     items: list[ItemOut]
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
     total: int
 
 
@@ -81,7 +81,7 @@ class CommentOut(BaseModel):
 
 class CommentPage(BaseModel):
     items: list[CommentOut]
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
 
 
 class NotificationOut(BaseModel):
@@ -93,7 +93,7 @@ class NotificationOut(BaseModel):
 
 class NotificationPage(BaseModel):
     items: list[NotificationOut]
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
 
 
 class LoginOut(BaseModel):
@@ -131,9 +131,9 @@ class ItemCreate(BaseModel):
     type: ItemType
     priority: Priority
     owning_team_id: int
-    assignee_id: Optional[int] = None
-    due_at: Optional[datetime] = None
-    approver_id: Optional[int] = None  # required when type == "approval"
+    assignee_id: int | None = None
+    due_at: datetime | None = None
+    approver_id: int | None = None  # required when type == "approval"
 
     @field_validator("title")
     @classmethod
@@ -146,17 +146,17 @@ class ItemCreate(BaseModel):
 
 class ItemPatch(BaseModel):
     expected_version: int = Field(ge=1)
-    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=10_000)
-    priority: Optional[Priority] = None
-    due_at: Optional[datetime] = None
-    assignee_id: Optional[int] = None  # explicit null unassigns; use model_fields_set to tell absent from null
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=10_000)
+    priority: Priority | None = None
+    due_at: datetime | None = None
+    assignee_id: int | None = None  # explicit null unassigns; use model_fields_set to tell absent from null
 
 
 class TransitionIn(BaseModel):
     to_status: Status
     expected_version: int = Field(ge=1)
-    resolution_note: Optional[str] = Field(default=None, max_length=10_000)
+    resolution_note: str | None = Field(default=None, max_length=10_000)
 
 
 class CommentIn(BaseModel):
@@ -177,4 +177,4 @@ class ApprovalRequestIn(BaseModel):
 
 class ApprovalDecisionIn(BaseModel):
     decision: Literal["approved", "rejected"]
-    note: Optional[str] = Field(default=None, max_length=2000)
+    note: str | None = Field(default=None, max_length=2000)

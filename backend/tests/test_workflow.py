@@ -1,4 +1,5 @@
 """Workflow rules are enforced by the service layer."""
+
 import pytest
 
 from app.workflow import STATUSES, TRANSITIONS
@@ -74,8 +75,9 @@ def test_approval_item_cannot_be_resolved_until_approved(world):
     actions = world.client().get(f"/work-items/{item_id}", headers=world.h("alice")).json()["allowed_actions"]
     assert "transition:resolved" not in actions
 
-    decide = world.client().post(f"/work-items/{item_id}/approval/decision", headers=world.h("dave"),
-                                 json={"decision": "approved"})
+    decide = world.client().post(
+        f"/work-items/{item_id}/approval/decision", headers=world.h("dave"), json={"decision": "approved"}
+    )
     assert decide.status_code == 200
 
     assert _transition(world, item_id, "resolved").status_code == 200
@@ -91,8 +93,12 @@ def test_rejected_approval_still_blocks_resolution_until_re_requested_and_approv
     assert "request_approval" in actions
     r = c.post(f"/work-items/{item_id}/approval", headers=world.h("alice"), json={"approver_id": world.users["erin"]})
     assert r.status_code == 201 and r.json()["approval"]["status"] == "pending"
-    assert c.post(f"/work-items/{item_id}/approval/decision", headers=world.h("erin"),
-                  json={"decision": "approved"}).status_code == 200
+    assert (
+        c.post(
+            f"/work-items/{item_id}/approval/decision", headers=world.h("erin"), json={"decision": "approved"}
+        ).status_code
+        == 200
+    )
     assert _transition(world, item_id, "resolved").status_code == 200
 
 
@@ -123,8 +129,12 @@ def test_every_mutation_bumps_version_and_writes_an_event(world):
     item_id = world.make_item()
     c = world.client()
     assert c.post(f"/work-items/{item_id}/claim", headers=world.h("alice")).json()["version"] == 2
-    assert c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                   json={"expected_version": 2, "priority": "P1"}).json()["version"] == 3
+    assert (
+        c.patch(
+            f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 2, "priority": "P1"}
+        ).json()["version"]
+        == 3
+    )
     assert _transition(world, item_id, "in_progress").json()["version"] == 4
     events = c.get(f"/work-items/{item_id}", headers=world.h("alice")).json()["events"]["items"]
     assert [e["type"] for e in events] == ["status_changed", "updated", "claimed"]
@@ -134,21 +144,29 @@ def test_every_mutation_bumps_version_and_writes_an_event(world):
 def test_patch_validates_assignee_belongs_to_team(world):
     item_id = world.make_item()
     c = world.client()
-    bad = c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                  json={"expected_version": 1, "assignee_id": world.users["erin"]})
+    bad = c.patch(
+        f"/work-items/{item_id}",
+        headers=world.h("alice"),
+        json={"expected_version": 1, "assignee_id": world.users["erin"]},
+    )
     assert bad.status_code == 422
-    ok = c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                 json={"expected_version": 1, "assignee_id": world.users["bob"]})
+    ok = c.patch(
+        f"/work-items/{item_id}",
+        headers=world.h("alice"),
+        json={"expected_version": 1, "assignee_id": world.users["bob"]},
+    )
     assert ok.status_code == 200 and ok.json()["assignee"]["id"] == world.users["bob"]
-    cleared = c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                      json={"expected_version": 2, "assignee_id": None})
+    cleared = c.patch(
+        f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 2, "assignee_id": None}
+    )
     assert cleared.status_code == 200 and cleared.json()["assignee"] is None
 
 
 def test_noop_patch_does_not_bump_version_or_write_events(world):
     item_id = world.make_item(title="same")
-    r = world.client().patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                             json={"expected_version": 1, "title": "same"})
+    r = world.client().patch(
+        f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 1, "title": "same"}
+    )
     assert r.status_code == 200 and r.json()["version"] == 1
     assert world.client().get(f"/work-items/{item_id}", headers=world.h("alice")).json()["events"]["items"] == []
 
@@ -157,5 +175,9 @@ def test_closed_items_cannot_be_claimed_or_edited(world):
     item_id = world.make_item(status="closed")
     c = world.client()
     assert c.post(f"/work-items/{item_id}/claim", headers=world.h("alice")).status_code == 409
-    assert c.patch(f"/work-items/{item_id}", headers=world.h("alice"),
-                   json={"expected_version": 1, "title": "x"}).status_code == 409
+    assert (
+        c.patch(
+            f"/work-items/{item_id}", headers=world.h("alice"), json={"expected_version": 1, "title": "x"}
+        ).status_code
+        == 409
+    )

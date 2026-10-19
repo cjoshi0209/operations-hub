@@ -11,6 +11,7 @@ Change status   : the assignee or a lead of the owning team
 Decide approval : the designated approver of the pending approval
 Comment         : anyone who can see the item
 """
+
 from sqlalchemy import exists, or_
 
 from .auth import Principal
@@ -47,9 +48,7 @@ def allowed_actions(p: Principal, item: WorkItem, approval: Approval | None) -> 
         actions.append("edit")
     if can_change_status(p, item):
         for target in TRANSITIONS.get(item.status, ()):
-            if target == "resolved" and approval_blocks_resolution(
-                item.type, approval.status if approval else None
-            ):
+            if target == "resolved" and approval_blocks_resolution(item.type, approval.status if approval else None):
                 continue
             actions.append(f"transition:{target}")
     if can_decide_approval(p, approval):

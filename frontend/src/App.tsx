@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useNotifications } from "./api/hooks";
 import { useAuth } from "./auth";
@@ -22,6 +22,20 @@ function Notifications() {
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState(readSeen);
   const items = data?.items ?? [];
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   const unread = items.filter((n) => n.id > seen).length;
 
   function toggle() {
@@ -38,8 +52,8 @@ function Notifications() {
   }
 
   return (
-    <div className="notif">
-      <button onClick={toggle} aria-label="Notifications">
+    <div className="notif" ref={ref}>
+      <button onClick={toggle} aria-label={`Notifications${unread ? `, ${unread} new` : ""}`} aria-expanded={open}>
         🔔 {unread > 0 && <span className="badge-count">{unread}</span>}
       </button>
       {open && (
@@ -68,18 +82,24 @@ function Shell() {
   if (!me) return <Navigate to="/login" replace />;
   return (
     <>
-      <nav className="topbar">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <nav className="topbar" aria-label="Primary">
         <Link to="/" className="brand">
           Operations Hub
         </Link>
         <span className="spacer" />
         <Notifications />
-        <span className="muted">
-          {me.user.name} · {me.memberships.map((m) => `${m.team.name}${m.role === "lead" ? " (lead)" : ""}`).join(", ")}
+        <span className="who" title={me.memberships.map((m) => `${m.team.name}${m.role === "lead" ? " (lead)" : ""}`).join(", ")}>
+          <strong>{me.user.name}</strong>
+          <span className="muted teams">
+            {me.memberships.map((m) => `${m.team.name}${m.role === "lead" ? " (lead)" : ""}`).join(", ")}
+          </span>
         </span>
         <button onClick={logout}>Sign out</button>
       </nav>
-      <main className="page">
+      <main className="page" id="main">
         <Outlet />
       </main>
     </>
